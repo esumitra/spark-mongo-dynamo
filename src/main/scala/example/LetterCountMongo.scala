@@ -35,26 +35,8 @@ object LetterCountMongo {
     ses.stop();
   }
 
-  def line2Counts(lines: RDD[String]): RDD[Tuple2[String, Long]] =
-    lines
-      .flatMap(line => line.split(" "))
-      .map(word => (word, 1L))
-      .reduceByKey(_ + _)
-
   def readInputFile(spark: SparkSession, inFilePath: String): RDD[String] =
     spark.read.textFile(inFilePath).cache().rdd
-
-  /**
-    * convert word count to Mongo JSON document
-    * lots of java classes here since connector supports java classes primarily
-    */
-  def wc2Document(wc: Tuple2[String, Long]): Option[Document] =
-    Try {
-      val wcMap = new HashMap[String, Object]()
-      wcMap.put("word", wc._1)
-      wcMap.put("count", (wc._2: java.lang.Long))
-      new Document(wcMap)
-    }.toOption
 
   /**
     * reads input file, calculates word count and writes to Mongo DB
@@ -68,5 +50,23 @@ object LetterCountMongo {
     counts
       .saveToMongoDB()
   }
+
+  def line2Counts(lines: RDD[String]): RDD[Tuple2[String, Long]] =
+    lines
+      .flatMap(line => line.split(" "))
+      .map(word => (word, 1L))
+      .reduceByKey(_ + _)
+
+    /**
+    * convert word count to Mongo JSON document
+    * lots of java classes here since connector supports java classes primarily
+    */
+  def wc2Document(wc: Tuple2[String, Long]): Option[Document] =
+    Try {
+      val wcMap = new HashMap[String, Object]()
+      wcMap.put("word", wc._1)
+      wcMap.put("count", (wc._2: java.lang.Long))
+      new Document(wcMap)
+    }.toOption
 
 }

@@ -42,6 +42,15 @@ object LetterCountDynamo {
     ses.stop();
   }
 
+  def readInputFile(spark: SparkSession, inFilePath: String): RDD[String] =
+    spark.read.textFile(inFilePath).cache().rdd
+
+  def writeCounts(spark: SparkSession,  inFilePath: String, outTable:String): Unit = {
+    val input = readInputFile(spark, inFilePath)
+    val counts = line2Counts(input).map(WordCount2DynamoMap(_))
+    writeToDynamo(outTable, counts)
+  }
+
   def line2Counts(lines: RDD[String]): RDD[WordCount] =
     lines
       .flatMap(line => line.split(" "))
@@ -49,6 +58,9 @@ object LetterCountDynamo {
       .reduceByKey(_ + _)
       .map(WordCount(_))
 
+  /**
+    * creates dynamo writable map using dynamo db connector java API
+    */
   def WordCount2DynamoMap(wc: WordCount): Tuple2[Text, DynamoDBItemWritable] = {
     val ddbMap = new HashMap[String, AttributeValue]()
     val wordValue = new AttributeValue()
@@ -62,12 +74,12 @@ object LetterCountDynamo {
     (new Text(""), item)
   }
 
-  def writeToDynamo(rdd: RDD[Tuple2[Text, DynamoDBItemWritable]]) = {
+  def writeToDynamo(tableName: String, rdd: RDD[Tuple2[Text, DynamoDBItemWritable]]) = {
     val jobConf2 = new JobConf(rdd.context.hadoopConfiguration)
     jobConf2.set("dynamodb.servicename", "dynamodb");
     jobConf2.set("dynamodb.endpoint", "dynamodb.us-east-1.amazonaws.com");
     jobConf2.set("dynamodb.regionid", "us-east-1");
-    jobConf2.set("dynamodb.output.tableName", "wordcount")
+    jobConf2.set("dynamodb.output.tableName", tableName)
     jobConf2.set("dynamodb.throughput.write.percent", "0.5")
     jobConf2.set("mapred.input.format.class", "org.apache.hadoop.dynamodb.read.DynamoDBInputFormat")
     jobConf2.set("mapred.output.format.class", "org.apache.hadoop.dynamodb.write.DynamoDBOutputFormat")
@@ -75,27 +87,5 @@ object LetterCountDynamo {
       .saveAsHadoopDataset(jobConf2)
   }
 
-  def readInputFile(spark: SparkSession, inFilePath: String): RDD[String] =
-    spark.read.textFile(inFilePath).cache().rdd
-
-  def writeCounts(spark: SparkSession,  inFilePath: String, outTable:String): Unit = {
-    val input = readInputFile(spark, inFilePath)
-    val counts = line2Counts(input).map(WordCount2DynamoMap(_))
-    writeToDynamo(counts)
-  }
 }
 
-/*
-REPL:
-import example._
-import utils._
-val rspark = SparkUtils.rspark
-import rspark.implicits._
-val readme = "/Users/esumitra/workspaces/scala/bigdata-processing/assignment5/src/main/resources/README.md"
-val ld = LetterCountDynamo.readInputFile(rspark, readme)
-val wc = LetterCountDynamo.line2Counts(ld)
-
-// aws commands
-scp -i ~/.ssh/esumitra-bigdata.pem emr-dynamodb-hadoop-4.2.0.jar hadoop@ec2-34-228-55-17.compute-1.amazonaws.com:/home/hadoop/emr-dynamodb-hadoop-4.2.0.jar
-ssh -i ~/.ssh/esumitra-bigdata.pem hadoop@ec2-34-228-55-17.compute-1.amazonaws.com
- */
